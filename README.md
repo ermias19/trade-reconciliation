@@ -1,6 +1,13 @@
 # Trade Reconciliation & Settlement Monitor
 
-A Python tool for the daily post-trade checks a trading assistant runs. It reconciles the desk's trades against custodian or counterparty confirmations, flags every discrepancy, highlights settlements at risk of failing, and nets FX settlements by counterparty, currency and value date.
+A Python toolkit for the daily checks a trading assistant runs:
+
+- **Reconciliation:** compares the desk's trades against custodian or counterparty confirmations and flags every discrepancy.
+- **Settlement monitoring:** highlights settlements at risk of failing.
+- **FX netting:** nets FX settlements by counterparty, currency and value date.
+- **Hedge tracking:** checks each portfolio's currency hedges.
+- **Corporate actions:** monitors corporate actions and election deadlines.
+- **Regulatory reporting:** builds an EMIR / Dodd-Frank style reporting extract for derivatives.
 
 ```
 $ recon sample_data/blotter.csv sample_data/confirmations.csv --as-of 2026-10-16
@@ -32,6 +39,9 @@ The sample data is made up. It uses emerging-markets currencies (BRL, MXN, ZAR, 
 ```bash
 pip install -e ".[dev]"
 recon sample_data/blotter.csv sample_data/confirmations.csv --as-of 2026-10-16 --out breaks.csv
+hedge-check sample_data/positions.csv sample_data/hedges.csv
+corp-actions sample_data/positions.csv sample_data/corporate_actions.csv --as-of 2026-10-18
+reg-report sample_data/blotter.csv --out emir_extract.csv
 pytest -q
 ```
 
@@ -50,6 +60,25 @@ Amounts are compared with a small tolerance so rounding differences don't create
 
 **4. FX netting (`netting.py`).** FX spot and forward trades with the same counterparty, currency and value date are combined into one net payment per currency. In the sample, BANK_A's two trades on 16 Oct become one USD receipt and one BRL payment instead of four flows. NDFs are excluded because they are cash-settled on the difference between the contract rate and the fixing rate, with no exchange of the restricted currency.
 
+
+**5. Currency hedge tracking (`hedging.py`).** An emerging-markets portfolio holding Brazilian or Mexican stocks is exposed to BRL and MXN. Selling those currencies forward (FX forwards, or NDFs for restricted currencies) hedges that exposure. For each portfolio and currency, the tool divides the hedged amount by the exposure. Anything outside 95–105% is flagged as UNDER-HEDGED or OVER-HEDGED for the portfolio manager. In the sample, EM_EQUITY's MXN is only 67% hedged and its ZAR is 112% hedged. FX spot trades are not counted as hedges.
+
+```
+portfolio currency  exposure     hedged  hedge_ratio       status
+EM_EQUITY      MXN   8250000  5500000.0     0.666667 UNDER-HEDGED
+EM_EQUITY      ZAR  16500000 18500000.0     1.121212  OVER-HEDGED
+```
+
+**6. Corporate actions (`corporate_actions.py`).** For every event on a security the fund holds, the tool works out the entitlement: cash for a dividend, extra shares for a split. *Mandatory* events (dividends, splits) just happen. *Voluntary* events (tender offers, rights issues) need the portfolio manager to choose, and missing the election deadline means losing the choice. Elections due within 10 days are listed first.
+
+```
+ security event_type election_deadline  quantity                     entitlement       action
+WALMEX MM     TENDER        2026-10-22    150000 elect on 150,000 shares at 58.0 ELECTION DUE
+ PETR4 BZ   DIVIDEND               NaT    200000                 cash 250,000.00         INFO
+```
+
+**7. Regulatory reporting extract (`reporting.py`).** Under EMIR (EU and UK) and Dodd-Frank (US), derivative trades must be reported to a trade repository. FX spot is not a derivative, so it's excluded. Each reportable trade gets a Unique Transaction Identifier (UTI), built here from the reporting firm's Legal Entity Identifier (LEI) plus a hash, together with notional, dates and counterparty. IRS and CDS are flagged "CHECK OBLIGATION" because some of them must be centrally cleared. This is a simplified learning version, not the full regulatory schema. The default LEI is a dummy test value.
+
 ## Glossary
 
 | Term | Meaning |
@@ -65,9 +94,14 @@ Amounts are compared with a small tolerance so rounding differences don't create
 | IRS | Interest rate swap: exchanging fixed for floating interest payments |
 | CDS | Credit default swap: insurance against a borrower defaulting |
 | EMIR / Dodd-Frank | EU/UK and US rules requiring derivative trades to be reported and, where eligible, cleared |
+| UTI / LEI | Unique Transaction Identifier for each reported trade / Legal Entity Identifier for each firm |
+| Hedge ratio | Hedged amount ÷ exposure; 100% means fully hedged |
+| Corporate action | An event decided by a company that affects its shareholders: dividend, split, tender offer, rights issue |
+| Election | The choice a holder makes on a voluntary corporate action, by a deadline |
 
 ## Limitations and next steps
 
 - Matching is on trade ID only. Real counterparties often use their own references, so the next step is fuzzy matching on economics (date, amounts, currencies).
 - Holidays are ignored. Settlement dates should use each currency's holiday calendar.
-- Possible extensions: corporate actions tracking, and an EMIR-style trade reporting extract.
+- Hedge targets are a fixed band. In practice each portfolio has its own hedging policy.
+- The reporting extract has core fields only. A real EMIR report has over 200 fields.

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "trade-reconciliation"
 version = "0.1.0"
-description = "Post-trade reconciliation, FX netting and settlement monitoring for a trading desk"
+description = "Post-trade reconciliation, settlement monitoring, FX netting, hedge tracking, corporate actions and regulatory reporting"
 requires-python = ">=3.10"
 dependencies = ["pandas>=2.0"]
 
@@ -14,6 +14,9 @@ dev = ["pytest>=7"]
 
 [project.scripts]
 recon = "trade_recon.cli:main"
+hedge-check = "trade_recon.extras_cli:hedges_main"
+corp-actions = "trade_recon.extras_cli:corp_actions_main"
+reg-report = "trade_recon.extras_cli:reg_report_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
